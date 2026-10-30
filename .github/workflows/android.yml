@@ -1,3 +1,4 @@
+
 name: Build NewLine Payment Speaker APK
 
 on:
@@ -5,6 +6,9 @@ on:
   push:
     branches:
       - main
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -28,13 +32,27 @@ jobs:
       - name: Extract Android project
         run: |
           unzip -q NewLinePaymentSpeaker_Source.zip -d extracted
+          echo "Extracted project files:"
+          find extracted -maxdepth 4 -type f | head -60
 
-      - name: Build debug APK
-        working-directory: extracted/NewLinePaymentSpeaker
-        run: gradle --no-daemon assembleDebug
+      - name: Find and build Android project
+        run: |
+          SETTINGS_FILE=$(find extracted -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
+
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "Android Gradle project settings file not found."
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+          echo "Project directory: $PROJECT_DIR"
+          cd "$PROJECT_DIR"
+
+          gradle --no-daemon assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: NewLine-Payment-Speaker-APK
-          path: extracted/NewLinePaymentSpeaker/app/build/outputs/apk/debug/*.apk
+          path: extracted/**/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
