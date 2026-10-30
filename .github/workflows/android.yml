@@ -18,7 +18,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Java
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -32,27 +32,48 @@ jobs:
       - name: Extract Android project
         run: |
           unzip -q NewLinePaymentSpeaker_Source.zip -d extracted
-          echo "Extracted project files:"
-          find extracted -maxdepth 4 -type f | head -60
 
-      - name: Find and build Android project
+      - name: Fix Java and Kotlin targets
         run: |
-          SETTINGS_FILE=$(find extracted -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
+          python3 - <<'PY'
+          from pathlib import Path
 
-          if [ -z "$SETTINGS_FILE" ]; then
-            echo "Android Gradle project settings file not found."
-            exit 1
-          fi
+          p = Path("extracted/app/build.gradle.kts")
+          if not p.exists():
+              raise SystemExit(f"Missing Gradle file: {p}")
 
-          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
-          echo "Project directory: $PROJECT_DIR"
-          cd "$PROJECT_DIR"
+          s = p.read_text()
+          marker = "    compileSdk = 35"
+          if marker not in s:
+              raise SystemExit("Could not find compileSdk line")
 
-          gradle --no-daemon assembleDebug
+          if "sourceCompatibility = JavaVersion.VERSION_17" not in s:
+              s = s.replace(
+                  marker,
+                  marker + """
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = "17"
+              }""",
+                  1
+              )
+
+          p.write_text(s)
+          print("Java and Kotlin targets set to 17")
+          PY
+
+      - name: Build APK
+        working-directory: extracted
+        run: gradle --no-daemon assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: NewLine-Payment-Speaker-APK
-          path: extracted/**/app/build/outputs/apk/debug/*.apk
+          path: extracted/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
